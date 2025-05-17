@@ -45,3 +45,4 @@ push:
 clean:
 	rm -rf kbot kbot.exe
 	docker rmi $(IMAGE_TAG) 2>/dev/null || true
+	
