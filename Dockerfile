@@ -1,9 +1,18 @@
 FROM golang:1.24.1 AS builder
 
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
 WORKDIR /go/src/app
 COPY . .
-# RUN go get - перенести в мейкфайл
-RUN make build
+RUN make build TARGETOS=${TARGETOS} TARGETARCH=${TARGETARCH}
+
+FROM golang:1.24.1 AS test
+WORKDIR /go/src/app
+COPY . .
+RUN make get
+RUN make test
+
 FROM scratch
 WORKDIR /
 COPY --from=builder /go/src/app/kbot .
