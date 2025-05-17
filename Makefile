@@ -57,28 +57,10 @@ image-macos-arm:
 
 image-windows:
 	$(MAKE) image TARGETOS=windows TARGETARCH=amd64
-	
-# image-linux:
-# 	docker build --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
-
-# image-linux-arm:
-# 	docker build --build-arg TARGETOS=linux-arm --build-arg TARGETARCH=arm64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
-
-# image-macos:
-# 	docker build --build-arg TARGETOS=darwin --build-arg TARGETARCH=amd64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
-
-# image-macos-arm:
-# 	docker build --build-arg TARGETOS=darwin --build-arg TARGETARCH=arm64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
-
-# image-windows:
-# 	docker build --build-arg TARGETOS=windows --build-arg TARGETARCH=amd64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
-
-
 
 push:
 	docker push $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)
 
 clean:
 	rm -rf kbot kbot.exe
-	docker rmi $(IMAGE_TAG) 2>/dev/null || true
-	
+	@docker rmi $(shell docker image ls --format '{{.Repository}}:{{.Tag}}' | grep "^$(REGISTRY)/$(APP):$(VERSION)") 2>/dev/null || true
