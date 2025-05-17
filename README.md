@@ -1,118 +1,126 @@
 # kbot
-t.me/tenariaz_bot
 
-## Огляд
-kbot — це телеграм бот, написаний на Go, який можна збирати та запускати на різних платформах, включаючи Linux, macOS та Windows, на архітектурах amd64 та arm64. Проект використовує Makefile для автоматизації збірки та Dockerfile для контейнеризації.
+[t.me/tenariaz_bot](https://t.me/tenariaz_bot)
 
-## Вимоги
+## Overview
+
+**kbot** is a Telegram bot written in Go that can be built and run on multiple platforms, including Linux, macOS, and Windows, on both `amd64` and `arm64` architectures. The project uses a `Makefile` for build automation and a `Dockerfile` for containerization.
+
+## Requirements
+
 -   Go 1.17+
 -   Docker
 -   Git
 -   Make
 
-## Швидкий старт
-### Клонування репозиторію
+## Quick Start
+
+### Clone the repository
+
 ```bash
 git clone https://github.com/tenariaz/kbot.git
 cd kbot
 ```
 
-### Збірка для вашої поточної платформи
+### Build for your current platform
 
 ```bash
 make build
 ```
 
-### Запуск програми
+### Run the program
 
 ```bash
 ./kbot
 ```
 
-## Крос-компіляція
+## Cross-Compilation
 
-### Збірка для різних платформ
+### Build for different platforms
 
 ```bash
-# Для Linux AMD64
+# For Linux AMD64
 make linux
 
-# Для Linux ARM64
+# For Linux ARM64
 make linux-arm
 
-# Для macOS AMD64
+# For macOS AMD64
 make darwin
 
-# Для macOS ARM64
+# For macOS ARM64
 make darwin-arm
 
-# Для Windows AMD64
+# For Windows AMD64
 make windows
 ```
 
 ## Docker
 
-### Побудова Docker образу
+### Build a Docker image
 
 ```bash
-# Для поточної платформи
+# For the current platform
 make image
-# Для Linux
-make image TARGETOS=linux TARGETARCH=amd64
-# Для Linux arm64
-make image TARGETOS=linux TARGETARCH=arm64
-# Для macOS arm64
-make image TARGETOS=darwin TARGETARCH=arm64
-# Для Windows
-make image TARGETOS=windows TARGETARCH=amd64
 
+# For Linux
+make image TARGETOS=linux TARGETARCH=amd64
+
+# For Linux arm64
+make image TARGETOS=linux TARGETARCH=arm64
+
+# For macOS arm64
+make image TARGETOS=darwin TARGETARCH=arm64
+
+# For Windows
+make image TARGETOS=windows TARGETARCH=amd64
 ```
 
-### Запуск тестів у Docker
+### Run tests in Docker
+
 
 ```bash
 docker build --target test .
 ```
 
-### Публікація Docker образу
+### Push Docker image
 
 ```bash
 make push
 ```
 
-### Запуск програми з Docker
+### Run the program from Docker
 
 ```bash
 docker run --rm ghcr.io/tenariaz/kbot:$(VERSION)-$(TARGETOS)-$(TARGETARCH)
 ```
 
-## Тестування
-
+## Testing
 ```bash
 make test
 ```
 
-## Очищення
+## Cleaning up
 
 ```bash
 make clean
 ```
 
-## Структура проекту
+## Project Structure
 
--   `cmd/` - Команди додатку
--   `pkg/` - Пакети бібліотек
--   `Makefile` - Автоматизація завдань
--   `Dockerfile` - Контейнеризація
+-   `cmd/` - Application commands
+-   `pkg/` - Library packages
+-   `Makefile` - Task automation
+-   `Dockerfile` - Containerization
 
-## Особливості
+## Features
 
--   Крос-компіляція для різних платформ (Linux, macOS, Windows)
--   Підтримка архітектур AMD64 та ARM64
--   Docker контейнери з підтримкою різних платформ без використання buildx
--   Автоматизація збірки та тестування
--   Інтеграція з GitHub Container Registry
+-   Cross-compilation for multiple platforms (Linux, macOS, Windows)
+-   Support for both AMD64 and ARM64 architectures
+-   Docker containers supporting multiple platforms without using buildx
+-   Automated build and testing
+-   Integrated with GitHub Container Registry
 
-## Ліцензія
+## License
 
 MIT

@@ -1,4 +1,4 @@
-FROM golang:1.24.1 AS builder
+FROM quay.io/projectquay/golang:1.24 AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
@@ -7,7 +7,7 @@ WORKDIR /go/src/app
 COPY . .
 RUN make build TARGETOS=${TARGETOS} TARGETARCH=${TARGETARCH}
 
-FROM golang:1.24.1 AS test
+FROM quay.io/projectquay/golang:1.24 AS test
 WORKDIR /go/src/app
 COPY . .
 RUN make get

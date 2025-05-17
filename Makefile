@@ -3,6 +3,7 @@ REGISTRY=ghcr.io/tenariaz
 VERSION=$(shell git describe --tags --abbrev=0)-$(shell git rev-parse --short HEAD)
 TARGETOS?=$(shell go env GOOS)
 TARGETARCH?=$(shell go env GOARCH)
+IMAGE_TAG=$(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)
 
 format:
 	gofmt -s -w ./
@@ -43,3 +44,4 @@ push:
 
 clean:
 	rm -rf kbot kbot.exe
+	docker rmi $(IMAGE_TAG) 2>/dev/null || true
