@@ -64,17 +64,20 @@ make windows
 make image
 
 # For Linux
-make image TARGETOS=linux TARGETARCH=amd64
+make image-linux
 
 # For Linux arm64
-make image TARGETOS=linux TARGETARCH=arm64
+make image-inux-arm64
 
 # For macOS arm64
-make image TARGETOS=darwin TARGETARCH=arm64
+make image-darwin-arm64
 
 # For Windows
-make image TARGETOS=windows TARGETARCH=amd64
+make image-windows-amd64
 ```
+
+
+
 
 ### Run tests in Docker
 

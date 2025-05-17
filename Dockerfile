@@ -1,5 +1,6 @@
 FROM quay.io/projectquay/golang:1.24 AS builder
 
+
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 

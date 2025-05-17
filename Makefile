@@ -26,10 +26,10 @@ linux:
 linux-arm:
 	make build TARGETOS=linux TARGETARCH=arm64
 
-darwin:
+macos:
 	make build TARGETOS=darwin TARGETARCH=amd64
 
-darwin-arm:
+macos-arm:
 	make build TARGETOS=darwin TARGETARCH=arm64
 
 windows:
@@ -37,7 +37,43 @@ windows:
 	mv kbot kbot.exe
 
 image:
-	docker build --build-arg TARGETOS=$(TARGETOS) --build-arg TARGETARCH=$(TARGETARCH) -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
+	docker build \
+		--build-arg TARGETOS=$(TARGETOS) \
+		--build-arg TARGETARCH=$(TARGETARCH) \
+		-t $(IMAGE_TAG) .
+
+# Alias-цілі для зручності
+image-linux:
+	$(MAKE) image TARGETOS=linux TARGETARCH=amd64
+
+image-linux-arm:
+	$(MAKE) image TARGETOS=linux TARGETARCH=arm64
+
+image-macos:
+	$(MAKE) image TARGETOS=darwin TARGETARCH=amd64
+
+image-macos-arm:
+	$(MAKE) image TARGETOS=darwin TARGETARCH=arm64
+
+image-windows:
+	$(MAKE) image TARGETOS=windows TARGETARCH=amd64
+	
+# image-linux:
+# 	docker build --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
+
+# image-linux-arm:
+# 	docker build --build-arg TARGETOS=linux-arm --build-arg TARGETARCH=arm64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
+
+# image-macos:
+# 	docker build --build-arg TARGETOS=darwin --build-arg TARGETARCH=amd64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
+
+# image-macos-arm:
+# 	docker build --build-arg TARGETOS=darwin --build-arg TARGETARCH=arm64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
+
+# image-windows:
+# 	docker build --build-arg TARGETOS=windows --build-arg TARGETARCH=amd64 -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) .
+
+
 
 push:
 	docker push $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)
