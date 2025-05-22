@@ -1,5 +1,5 @@
 APP=$(shell basename $(shell git rev-parse --show-toplevel))
-USER=artur-nikitenko
+USER=tenariaz
 REGISTRY=ghcr.io/$(USER)
 VERSION=$(shell git describe --tags --abbrev=0)-$(shell git rev-parse --short HEAD)
 
