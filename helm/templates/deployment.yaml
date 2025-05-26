@@ -39,10 +39,10 @@ spec:
           volumeMounts:
           - mountPath: /dev/mem
             name: dev-mem
-          image: {{ .Values.image.repository }}/{{ .Chart.Name }}:{{ .Values.image.tag }}-{{ .Values.image.arch | default "arm64"}}
+          image: {{ .Values.image.repository }}/{{ .Chart.Name }}:{{ .Values.image.tag }}-{{ .Values.image.arch | default "amd64"}}
           env:
           - name: {{ .Values.secret.tokenName }}
             valueFrom:
               secretKeyRef:
                 key: {{ .Values.secret.key }}
-                name: {{ .Values.secret.name }}
+                name: {{ .Values.secret.name }

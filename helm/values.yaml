@@ -7,6 +7,7 @@ replicaCount: 1
 image:
   repository: "tenariaz"
   tag: "v1.0.11-1a6730e"
+  arch: amd64
 
 secret:
   tokenKey: "token"
