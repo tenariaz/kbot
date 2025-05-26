@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "kbot-1.0.13.tgz.name" -}}
+{{- define "kbot-v0.1.2.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "kbot-1.0.13.tgz.fullname" -}}
+{{- define "kbot-v0.1.2.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,16 +26,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "kbot-1.0.13.tgz.chart" -}}
+{{- define "kbot-v0.1.2.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "kbot-1.0.13.tgz.labels" -}}
-helm.sh/chart: {{ include "kbot-1.0.13.tgz.chart" . }}
-{{ include "kbot-1.0.13.tgz.selectorLabels" . }}
+{{- define "kbot-v0.1.2.labels" -}}
+helm.sh/chart: {{ include "kbot-v0.1.2.chart" . }}
+{{ include "kbot-v0.1.2.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,17 +45,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "kbot-1.0.13.tgz.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "kbot-1.0.13.tgz.name" . }}
+{{- define "kbot-v0.1.2.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kbot-v0.1.2.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "kbot-1.0.13.tgz.serviceAccountName" -}}
+{{- define "kbot-v0.1.2.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "kbot-1.0.13.tgz.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "kbot-v0.1.2.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
