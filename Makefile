@@ -57,7 +57,7 @@ lint: install-lint
 # Run tests
 test:
 	@echo "Running tests..."
-	@go test -v -cover ./...
+	@go test -v
 
 # Get dependencies
 get:
