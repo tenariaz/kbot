@@ -2,6 +2,8 @@
 
 [t.me/tenariaz_bot](https://t.me/tenariaz_bot)
 
+![CI/CD Flow](docs/ci-cd-flow.png)
+
 ## Overview
 
 **kbot** is a Telegram bot written in Go that can be built and run on multiple platforms, including Linux, macOS, and Windows, on both `amd64` and `arm64` architectures. The project uses a `Makefile` for build automation and a `Dockerfile` for containerization.
