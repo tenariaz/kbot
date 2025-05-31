@@ -4,9 +4,7 @@ on:
   push:
     branches:
       - develop
-  pull_request:
-    branches:
-      - develop
+
 env:
   TARGETARCH: amd64
   TARGETOS: linux
@@ -86,6 +84,11 @@ jobs:
         uses: mikefarah/yq@master
         with:
           cmd: yq -i '.image.tag=strenv(VERSION)' helm/values.yaml
+
+      - name: Trigger ArgoCD Sync
+        run: |
+         argocd app sync kbot --auth-token ${{ secrets.GH_TOKEN }}
+
 
       - run: |
           git config user.name github-actions
