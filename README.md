@@ -2,7 +2,7 @@
 
 [t.me/tenariaz_bot](https://t.me/tenariaz_bot)
 
-![CI/CD Flow](docs/ci-cd-flow.png)
+![CI/CD Flow](ci-cd-flow.png)
 
 ## Overview
 
