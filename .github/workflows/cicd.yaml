@@ -25,7 +25,7 @@ jobs:
           REGISTRY: ${{ secrets.DOCKERHUB_USERNAME }}
         run: make image push
 
-CD:
+cd:
     name: CD
     runs-on: ubuntu-latest
     needs: ci
