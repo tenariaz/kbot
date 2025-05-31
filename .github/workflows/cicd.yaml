@@ -4,10 +4,13 @@ on: push
 
 jobs:
   ci:
+    name: CI
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Run tests
         run: make test
@@ -16,3 +19,8 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build&push
+        env:
+          APP: "kbot"
+          REGISTRY: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: make image push
