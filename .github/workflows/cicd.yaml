@@ -91,12 +91,12 @@ jobs:
           git commit -am "Update version $VERSION"
           git push
 
-      - name: Install ArgoCD CLI
-        run: |
-          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          chmod +x argocd
-          sudo mv argocd /usr/local/bin/argocd
+      # - name: Install ArgoCD CLI
+      #   run: |
+      #     curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+      #     chmod +x argocd
+      #     sudo mv argocd /usr/local/bin/argocd
 
-      - name: Trigger ArgoCD Sync
-        run: |
-         argocd app sync kbot --auth-token ${{ secrets.GH_TOKEN }}
+      # - name: Trigger ArgoCD Sync
+      #   run: |
+      #    argocd app sync kbot --auth-token ${{ secrets.GH_TOKEN }}
