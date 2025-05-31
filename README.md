@@ -1,6 +1,37 @@
 # kbot
 
-[t.me/tenariaz_bot](https://t.me/tenariaz_bot)
+# 🤖 Telegram Bot (kbot) - Complete CI/CD Pipeline
+
+## Architecture Overview
+
+This project implements a complete CI/CD pipeline for a Telegram bot using modern DevOps practices:
+
+- **CI/CD**: GitHub Actions
+- **Container Registry**: GitHub Container Registry (ghcr.io)
+- **Deployment**: ArgoCD + Kubernetes
+- **Infrastructure**: Kubernetes
+- **Trigger**: Push to `develop` branch
+
+## 🔄 CI/CD Workflow
+
+```mermaid
+graph TD
+    A[🧑‍💻 Developer Push to develop] --> B[🔧 GitHub Actions Triggered]
+    B --> C[✅ CI: Run Tests & Lint]
+    C --> D[🔨 CI: Build Go Application]
+    D --> E[🐳 CI: Build Docker Image]
+    E --> F[📦 CI: Push to ghcr.io]
+    F --> G[📝 CD: Update Helm Chart]
+    G --> H[💾 CD: Commit Version Update]
+    H --> I[👁️ ArgoCD Detects Changes]
+    I --> J[🔄 ArgoCD Sync Application]
+    J --> K[🚀 Deploy to Kubernetes]
+    K --> L[🤖 Telegram Bot Running]
+
+    M[📊 ArgoCD Dashboard] --> I
+    N[☸️ Kubernetes Cluster] --> K
+    O[📦 GitHub Container Registry] --> F
+```
 
 ## Overview
 

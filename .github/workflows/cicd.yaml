@@ -1,6 +1,17 @@
 name: KBOT-CICD
 
-on: push
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+env:
+  TARGETARCH: amd64
+  TARGETOS: linux
+  CGO_ENABLED: 0
+  REGISTRY: ghcr.io
 
 jobs:
   ci:
@@ -8,39 +19,71 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run tests
-        run: make test
-      - name: Docker Hub login
-        uses: docker/login-action@v2
+      - name: Set up Go
+        uses: actions/setup-go@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build&push
-        env:
-          APP: "kbot"
-          REGISTRY: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: make image push
+          go-version: '1.24'
+          cache: true
 
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Build
+        run: make build TARGETARCH=${{ env.TARGETARCH }} TARGETOS=${{ env.TARGETOS }}
   cd:
     name: CD
     runs-on: ubuntu-latest
     needs: ci
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     permissions:
       contents: write
+      packages: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
+          token: ${{ secrets.GH_TOKEN }}
           fetch-depth: 0
 
-      - run: echo "VERSION=$(git describe --tags --abbrev=0)-$(git rev-parse --short HEAD)" »> $GITHUB_ENV
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+          cache: true
 
-      - uses: mikefarah/yq@master
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: tenariaz
+          password: ${{ secrets.GH_TOKEN }}
+
+      - name: Set version
+        run: |
+          VERSION=$(git describe --tags --abbrev=0)-$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Using version: $VERSION"
+
+      - name: Build and push Docker image
+        env:
+          APP: "kbot"
+          REGISTRY: ghcr.io/tenariaz
+        run: |
+          make image push \
+            TARGETARCH=${{ env.TARGETARCH }} \
+            TARGETOS=${{ env.TARGETOS }} \
+            VERSION=${{ env.VERSION }}
+
+      - name: Update Helm values
+        uses: mikefarah/yq@master
         with:
           cmd: yq -i '.image.tag=strenv(VERSION)' helm/values.yaml
 
