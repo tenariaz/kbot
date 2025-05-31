@@ -5,7 +5,7 @@
 replicaCount: 1
 image:
   repository: "ghcr.io/tenariaz"
-  tag: "v1.0.16-1375312"
+  tag: "v1.0.16-700c8cc"
   arch: amd64
 secret:
   tokenKey: "token"
