@@ -57,7 +57,7 @@ lint: install-lint
 # Run tests
 test:
 	@echo "Running tests..."
-	@go test -v
+	@go test -v ./...
 
 # Get dependencies
 get:
@@ -92,7 +92,6 @@ push:
 
 # Clean build artifacts
 clean:
-	@echo "Cleaning build artifacts..."
 	@rm -rf kbot
 	@docker rmi $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) || true
 

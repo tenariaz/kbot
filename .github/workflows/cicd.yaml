@@ -48,7 +48,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_TOKEN }}
           fetch-depth: 0
 
       - name: Set up Go
@@ -62,7 +61,7 @@ jobs:
         with:
           registry: ghcr.io
           username: tenariaz
-          password: ${{ secrets.GH_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN}}
 
       - name: Set version
         run: |
@@ -72,7 +71,7 @@ jobs:
 
       - name: Build and push Docker image
         env:
-          APP: "kbot"
+          APP: kbot
           REGISTRY: ghcr.io/tenariaz
         run: |
           make image push \
@@ -83,7 +82,8 @@ jobs:
       - name: Update Helm values
         uses: mikefarah/yq@master
         with:
-          cmd: yq -i '.image.tag=strenv(VERSION)' helm/values.yaml
+          cmd: |
+          yq -i '.image.tag = strenv(VERSION) | .image.os = strenv(TARGETOS) | .image.arch = strenv(TARGETARCH)' helm/values.yaml
 
       - run: |
           git config user.name github-actions
@@ -91,12 +91,13 @@ jobs:
           git commit -am "Update version $VERSION"
           git push
 
-      # - name: Install ArgoCD CLI
-      #   run: |
-      #     curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-      #     chmod +x argocd
-      #     sudo mv argocd /usr/local/bin/argocd
 
-      # - name: Trigger ArgoCD Sync
-      #   run: |
-      #    argocd app sync kbot --auth-token ${{ secrets.GH_TOKEN }}
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/argocd
+
+      - name: Trigger ArgoCD Sync
+        run: |
+          argocd app sync kbot --auth-token ${{ secrets.ARGOCD_AUTH_TOKEN }}
