@@ -8,6 +8,7 @@ image:
   repository: "ghcr.io/tenariaz"
   tag: "v1.0.11-1a6730e"
   arch: amd64
+  os: linux
 
 secret:
   tokenKey: "token"
