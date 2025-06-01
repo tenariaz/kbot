@@ -61,7 +61,7 @@ jobs:
         with:
           registry: ghcr.io
           username: tenariaz
-          password: ${{ secrets.GITHUB_TOKEN}}
+          password: ${{ secrets.GH_TOKEN}}
 
       - name: Set version
         run: |
