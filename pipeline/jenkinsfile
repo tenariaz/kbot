@@ -1,0 +1,57 @@
+pipeline {
+    agent any
+    environment {
+        REPO = 'https://github.com/tenariaz/kbot'
+        BRANCH = "main"
+    }
+    stages {
+        stage("clone") {
+            steps {
+                echo 'CLONE REPOSITORY'
+                git branch: "${BRANCH}", url: "${REPO}"
+            }
+        }
+        stage("test") {
+            steps {
+                echo 'TEST EXECUTION STARTED'
+                sh 'make test'
+            }
+        }
+        stage("build") {
+            steps {
+                echo 'BUILD EXECUTION STARTED'
+                sh 'make build'
+            }
+        }
+        stage("image") {
+            steps {
+                script {
+                    echo 'IMAGE BUILD EXECUTION STARTED'
+                    sh 'make image'
+                }
+            }
+        }
+        stage("push") {
+            steps {
+                script {
+                    docker.withRegistry('https://dockerhub', 'dockerhub') {
+                        sh 'make push'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'CLEANUP EXECUTION STARTED'
+            sh 'make clean'
+        }
+        success {
+            echo 'BUILD SUCCESSFUL'
+        }
+        failure {
+            echo 'BUILD FAILED'
+        }
+    }
+}
