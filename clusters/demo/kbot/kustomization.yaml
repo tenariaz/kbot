@@ -11,5 +11,5 @@ spec:
     kind: GitRepository
     name: kbot       # 👈 має збігатися з назвою `GitRepository`!
     namespace: flux-system
-  targetNamespace: default
+  targetNamespace: demo
   timeout: 2m
