@@ -4,14 +4,16 @@
 
 replicaCount: 1
 image:
-  repository: "ghcr.io/tenariaz"
-  tag: "v1.0.18-bcd1307"
+  repository: "ghcr.io/tenariaz/"
+  tag: "v1.0.20-f94b5f3"
   arch: amd64
-  os: linux
-  pullSecret: ghcr-creds
+  #  os: linux
+  imagePullSecrets: ghcr
 secret:
   tokenKey: "token"
   tokenName: "TELE_TOKEN"
   name: "kbot"
 service:
   port: 8080
+podSecurityContext:
+  privileged: true
