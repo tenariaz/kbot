@@ -23,6 +23,7 @@ spec:
           - 1.1.1.1
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
+      - name: {{ .Values.image.pullSecret }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
@@ -45,4 +46,4 @@ spec:
             valueFrom:
               secretKeyRef:
                 key: {{ .Values.secret.tokenKey }}
-                name: {{ .Values.secret.name }} #fix
+                name: {{ .Values.secret.name }}

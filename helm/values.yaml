@@ -8,6 +8,7 @@ image:
   tag: "v1.0.18-a7aa85e"
   arch: amd64
   os: linux
+  pullSecret: ghcr-creds
 secret:
   tokenKey: "token"
   tokenName: "TELE_TOKEN"
