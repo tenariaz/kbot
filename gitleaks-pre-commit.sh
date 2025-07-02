@@ -35,7 +35,7 @@ fi
 
 # Run gitleaks scan
 echo "Running gitleaks scan..."
-gitleaks detect
+gitleaks detect --no-git -v
 
 if [ $? -ne 0 ]; then
   echo "🚨 Potential secrets detected. Commit aborted."
