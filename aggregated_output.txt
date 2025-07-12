@@ -1,3 +1,600 @@
+===== ./cluster/clusters/demo/kbot/helm-release.yaml =====
+# clusters/dev/kbot/helm-release.yaml
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: kbot
+  namespace: demo
+spec:
+  releaseName: kbot
+  interval: 1m
+  chart:
+    spec:
+      chart: ./helm
+      sourceRef:
+        kind: GitRepository
+        name: kbot
+        namespace: flux-system
+  values:
+    image:
+      repository: ghcr.io/tenariaz/kbot
+      tag: "latest"
+
+
+===== ./cluster/clusters/demo/kbot/kustomization.yaml =====
+#apiVersion: kustomize.toolkit.fluxcd.io/v1
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: kbot
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: ./clusters/demo
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: kbot       # 👈 має збігатися з назвою `GitRepository`!
+    namespace: flux-system
+  targetNamespace: demo
+  timeout: 2m
+
+
+===== ./cluster/cmd/kbot.go =====
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/hirosassa/zerodriver"
+	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+	"go.opentelemetry.io/otel/trace"
+	telebot "gopkg.in/telebot.v3"
+)
+
+var (
+	TeleToken   = os.Getenv("TELE_TOKEN")
+	MetricsHost = os.Getenv("METRICS_HOST")
+	tracer      trace.Tracer
+)
+
+// Initialize OpenTelemetry with traces and metrics
+func initTelemetry(ctx context.Context) (*sdktrace.TracerProvider, *sdkmetric.MeterProvider, error) {
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("kbot"),
+		semconv.ServiceVersionKey.String(appVersion),
+	)
+
+	// Set up trace provider
+	traceExporter, err := otlptracegrpc.New(ctx,
+		otlptracegrpc.WithEndpoint(MetricsHost),
+		otlptracegrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	traceProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(traceExporter),
+		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+
+	// Set up metric provider
+	metricExporter, err := otlpmetricgrpc.New(ctx,
+		otlpmetricgrpc.WithEndpoint(MetricsHost),
+		otlpmetricgrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	metricProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(res),
+		sdkmetric.WithReader(
+			sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(10*time.Second)),
+		),
+	)
+
+	// Set global providers
+	otel.SetTracerProvider(traceProvider)
+	otel.SetMeterProvider(metricProvider)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	tracer = otel.Tracer("kbot")
+	return traceProvider, metricProvider, nil
+}
+
+func handleMessage(ctx context.Context, logger *zerodriver.Logger, m telebot.Context) error {
+	ctx, span := tracer.Start(ctx, "handle_telegram_message")
+	defer span.End()
+
+	traceID := span.SpanContext().TraceID().String()
+	spanID := span.SpanContext().SpanID().String()
+
+	// Логуємо з TraceID
+	logger.Info().
+		Str("trace_id", traceID).
+		Str("span_id", spanID).
+		Str("payload", m.Text()).
+		Str("user_id", fmt.Sprintf("%d", m.Sender().ID)).
+		Msg("Processing telegram message")
+
+	span.SetAttributes(
+		attribute.String("telegram.message", m.Text()),
+		attribute.Int64("telegram.user_id", m.Sender().ID),
+		attribute.String("telegram.username", m.Sender().Username),
+	)
+
+	payload := m.Message().Payload
+
+	var err error
+	switch payload {
+	case "hello":
+		span.AddEvent("Sending hello response")
+		err = m.Send(fmt.Sprintf("Hello I'm Kbot %s! TraceID: %s", appVersion, traceID))
+	default:
+		span.AddEvent("Unknown command")
+		err = m.Send("Unknown command")
+	}
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Error().
+			Str("trace_id", traceID).
+			Err(err).
+			Msg("Failed to send message")
+	} else {
+		span.SetStatus(codes.Ok, "Message sent successfully")
+	}
+
+	return err
+}
+
+var kbotCmd = &cobra.Command{
+	Use:     "kbot",
+	Aliases: []string{"start"},
+	Short:   "A Telegram bot with OpenTelemetry tracing",
+	Run: func(cmd *cobra.Command, args []string) {
+		ctx := context.Background()
+		logger := zerodriver.NewProductionLogger()
+
+		// Initialize telemetry
+		traceProvider, metricProvider, err := initTelemetry(ctx)
+		if err != nil {
+			logger.Fatal().Err(err).Msg("Failed to initialize telemetry")
+			return
+		}
+		defer traceProvider.Shutdown(ctx)
+		defer metricProvider.Shutdown(ctx)
+
+		// Create bot
+		kbot, err := telebot.NewBot(telebot.Settings{
+			Token:  TeleToken,
+			Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
+		})
+
+		if err != nil {
+			logger.Fatal().Err(err).Msg("Please check TELE_TOKEN")
+			return
+		}
+
+		logger.Info().Str("version", appVersion).Msg("KBot started with OpenTelemetry")
+
+		// Handle messages with tracing
+		kbot.Handle(telebot.OnText, func(m telebot.Context) error {
+			return handleMessage(ctx, logger, m)
+		})
+
+		kbot.Start()
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(kbotCmd)
+}
+
+
+===== ./cluster/cmd/kbot.go.old =====
+/*
+Copyright © 2023 NAME HERE den.vasyliev@gmail.com
+*/
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/hirosassa/zerodriver"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+	telebot "gopkg.in/telebot.v3"
+)
+
+var (
+	// TeleToken bot
+	TeleToken = os.Getenv("TELE_TOKEN")
+	// MetricsHost exporter host:port
+	MetricsHost = os.Getenv("METRICS_HOST")
+)
+
+// Initialize OpenTelemetry
+func initMetrics(ctx context.Context) {
+
+	// Create a new OTLP Metric gRPC exporter with the specified endpoint and options
+	exporter, _ := otlpmetricgrpc.New(
+		ctx,
+		otlpmetricgrpc.WithEndpoint(MetricsHost),
+		otlpmetricgrpc.WithInsecure(),
+	)
+
+	// Define the resource with attributes that are common to all metrics.
+	// labels/tags/resources that are common to all metrics.
+	resource := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(fmt.Sprintf("kbot_%s", appVersion)),
+	)
+
+	// Create a new MeterProvider with the specified resource and reader
+	mp := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(resource),
+		sdkmetric.WithReader(
+			// collects and exports metric data every 10 seconds.
+			sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(10*time.Second)),
+		),
+	)
+
+	// Set the global MeterProvider to the newly created MeterProvider
+	otel.SetMeterProvider(mp)
+
+}
+
+func pmetrics(ctx context.Context, payload string) {
+	// Get the global MeterProvider and create a new Meter with the name "kbot_light_signal_counter"
+	meter := otel.GetMeterProvider().Meter("kbot_light_signal_counter")
+
+	// Get or create an Int64Counter instrument with the name "kbot_light_signal_<payload>"
+	counter, _ := meter.Int64Counter(fmt.Sprintf("kbot_light_signal_%s", payload))
+
+	// Add a value of 1 to the Int64Counter
+	counter.Add(ctx, 1)
+}
+
+// kbotCmd represents the kbot command
+var kbotCmd = &cobra.Command{
+	Use:     "kbot",
+	Aliases: []string{"start"},
+	Short:   "A brief description of your command",
+	Long: `A longer description that spans multiple lines and likely contains examples
+and usage of using your command. For example:
+
+Cobra is a CLI library for Go that empowers applications.
+This application is a tool to generate the needed files
+to quickly create a Cobra application.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		logger := zerodriver.NewProductionLogger()
+
+		kbot, err := telebot.NewBot(telebot.Settings{
+			URL:    "",
+			Token:  TeleToken,
+			Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
+		})
+
+		if err != nil {
+			logger.Fatal().Str("Error", err.Error()).Msg("Please check TELE_TOKEN")
+			return
+		} else {
+			logger.Info().Str("Version", appVersion).Msg("kbot started")
+
+		}
+
+		kbot.Handle(telebot.OnText, func(m telebot.Context) error {
+			logger.Info().Str("Payload", m.Text()).Msg(m.Message().Payload)
+
+			payload := m.Message().Payload
+			pmetrics(context.Background(), payload)
+
+			switch payload {
+			case "hello":
+				err = m.Send(fmt.Sprintf("Hello I'm Kbot %s!", appVersion))
+			}
+
+			return err
+
+		})
+
+		kbot.Start()
+	},
+}
+
+func init() {
+	ctx := context.Background()
+	initMetrics(ctx)
+	rootCmd.AddCommand(kbotCmd)
+
+}
+
+
+===== ./cluster/cmd/root.go =====
+/*
+Copyright © 2025 NAME HERE <EMAIL ADDRESS>
+*/
+package cmd
+
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+)
+
+// rootCmd represents the base command when called without any subcommands
+var rootCmd = &cobra.Command{
+	Use:   "kbot",
+	Short: "A brief description of your application",
+	Long: `A longer description that spans multiple lines and likely contains
+examples and usage of using your application. For example:
+
+Cobra is a CLI library for Go that empowers applications.
+This application is a tool to generate the needed files
+to quickly create a Cobra application.`,
+	// Uncomment the following line if your bare application
+	// has an action associated with it:
+	// Run: func(cmd *cobra.Command, args []string) { },
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
+	err := rootCmd.Execute()
+	if err != nil {
+		os.Exit(1)
+	}
+}
+
+func init() {
+	// Here you will define your flags and configuration settings.
+	// Cobra supports persistent flags, which, if defined here,
+	// will be global for your application.
+
+	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.kbot.yaml)")
+
+	// Cobra also supports local flags, which will only run
+	// when this action is called directly.
+	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+
+===== ./cluster/cmd/version.go =====
+/*
+Copyright © 2025 NAME HERE <EMAIL ADDRESS>
+*/
+package cmd
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+var appVersion = "Version"
+
+// versionCmd represents the version command
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "A brief description of your command",
+	Long: `A longer description that spans multiple lines and likely contains examples
+and usage of using your command. For example:
+
+Cobra is a CLI library for Go that empowers applications.
+This application is a tool to generate the needed files
+to quickly create a Cobra application.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(appVersion)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(versionCmd)
+
+	// Here you will define your flags and configuration settings.
+
+	// Cobra supports Persistent Flags which will work for this command
+	// and all subcommands, e.g.:
+	// versionCmd.PersistentFlags().String("foo", "", "A help for foo")
+
+	// Cobra supports local flags which will only run when this command
+	// is called directly, e.g.:
+	// versionCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+
+===== ./cluster/Dockerfile =====
+FROM quay.io/projectquay/golang:1.24 AS builder
+
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
+WORKDIR /go/src/app
+COPY . .
+RUN make build TARGETOS=${TARGETOS} TARGETARCH=${TARGETARCH}
+
+FROM quay.io/projectquay/golang:1.24 AS test
+WORKDIR /go/src/app
+COPY . .
+RUN make get
+RUN make test
+
+FROM scratch
+WORKDIR /
+COPY --from=builder /go/src/app/kbot .
+COPY --from=alpine:latest /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+ENTRYPOINT ["./kbot", "start"]
+
+
+===== ./cluster/.github/workflows/cicd.yaml =====
+name: KBOT-CICD
+
+on:
+  push:
+    branches:
+      - develop
+
+env:
+  TARGETARCH: amd64
+  TARGETOS: linux
+  CGO_ENABLED: 0
+  REGISTRY: ghcr.io
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Build
+        run: make build TARGETARCH=${{ env.TARGETARCH }} TARGETOS=${{ env.TARGETOS }}
+  cd:
+    name: CD
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: tenariaz
+          password: ${{ secrets.GH_TOKEN}}
+
+      - name: Set version
+        run: |
+          VERSION=$(git describe --tags --abbrev=0)-$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Using version: $VERSION"
+
+      - name: Build and push Docker image
+        env:
+          APP: kbot
+          REGISTRY: ghcr.io/tenariaz
+        run: |
+          make image push \
+            TARGETARCH=${{ env.TARGETARCH }} \
+            TARGETOS=${{ env.TARGETOS }} \
+            VERSION=${{ env.VERSION }}
+
+      - name: Update Helm values
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq -i '.image.tag=strenv(VERSION)' helm/values.yaml
+
+      - run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git commit -am "Update version $VERSION"
+          git push
+
+
+===== ./cluster/go.mod =====
+module github.com/tenariaz/kbot
+
+go 1.24
+
+require (
+	github.com/spf13/cobra v1.9.1
+	gopkg.in/telebot.v3 v3.3.8
+)
+
+require (
+	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
+	github.com/rs/zerolog v1.20.0 // indirect
+	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.37.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.37.0 // indirect
+	go.opentelemetry.io/otel/metric v1.37.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.37.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.37.0 // indirect
+	go.opentelemetry.io/otel/trace v1.37.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.7.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
+	google.golang.org/grpc v1.73.0 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
+)
+
+require (
+	github.com/hirosassa/zerodriver v0.1.4
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
+	go.opentelemetry.io/otel v1.37.0
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.37.0
+)
+
+
+===== ./cluster/go.sum =====
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.38.0/go.mod h1:990N+gfupTy94rShfmMCWGDn0LpTmnzTp2qbd1dvSRU=
@@ -911,3 +1508,314 @@ rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8
 rsc.io/quote/v3 v3.1.0/go.mod h1:yEA65RcK8LyAZtP9Kv3t0HmxON59tX3rD+tICJqUlj0=
 rsc.io/sampler v1.3.0/go.mod h1:T1hPZKmBbMNahiBKFy5HrXp6adAjACjK9JXDnKaTXpA=
 sigs.k8s.io/yaml v1.2.0/go.mod h1:yfXDCHCao9+ENCvLSE62v9VSji2MKu5jeNfTrofGhJc=
+
+
+===== ./cluster/helm/Chart.yaml =====
+apiVersion: v2
+name: kbot
+description: A Helm chart for Kubernetes
+
+# A chart can be either an 'application' or a 'library' chart.
+#
+# Application charts are a collection of templates that can be packaged into versioned archives
+# to be deployed.
+#
+# Library charts provide useful utilities or functions for the chart developer. They're included as
+# a dependency of application charts to inject those utilities and functions into the rendering
+# pipeline. Library charts do not define any templates and therefore cannot be deployed.
+type: application
+
+# This is the chart version. This version number should be incremented each time you make changes
+# to the chart and its templates, including the app version.
+# Versions are expected to follow Semantic Versioning (https://semver.org/)
+version: 0.1.7
+
+# This is the version number of the application being deployed. This version number should be
+# incremented each time you make changes to the application. Versions are not expected to
+# follow Semantic Versioning. They should reflect the version the application is using.
+# It is recommended to use it with quotes.
+appVersion: "1.0.22"
+
+
+===== ./cluster/helm/.helmignore =====
+# Patterns to ignore when building packages.
+# This supports shell glob matching, relative path matching, and
+# negation (prefixed with !). Only one pattern per line.
+.DS_Store
+# Common VCS dirs
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+# Common backup files
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+# Various IDEs
+.project
+.idea/
+*.tmproj
+.vscode/
+
+
+===== ./cluster/helm/templates/deployment.yaml =====
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helm.fullname" . }}
+  labels:
+    {{- include "helm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "helm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "helm.selectorLabels" . | nindent 8 }}
+    spec:
+      dnsConfig:
+        nameservers:
+          - 1.1.1.1
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+      - name: {{ .Values.image.pullSecret }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+      - hostPath:
+          path: /dev/mem
+          type: ""
+        name: dev-mem
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+          - mountPath: /dev/mem
+            name: dev-mem
+          image: {{ .Values.image.repository }}/{{ .Chart.Name }}:{{ .Values.image.tag }}-{{ .Values.image.os | default "linux"}}-{{ .Values.image.arch | default "amd64"}}
+          env:
+          - name: {{ .Values.secret.tokenName }}
+            valueFrom:
+              secretKeyRef:
+                key: {{ .Values.secret.tokenKey }}
+                name: {{ .Values.secret.name }}
+
+
+===== ./cluster/helm/templates/_helpers.tpl =====
+{{/*
+Expand the name of the chart.
+*/}}
+{{- define "helm.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create a default fully qualified app name.
+We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
+If release name contains chart name it will be used as a full name.
+*/}}
+{{- define "helm.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create chart name and version as used by the chart label.
+*/}}
+{{- define "helm.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Common labels
+*/}}
+{{- define "helm.labels" -}}
+helm.sh/chart: {{ include "helm.chart" . }}
+{{ include "helm.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Selector labels
+*/}}
+{{- define "helm.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "helm.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Create the name of the service account to use
+*/}}
+{{- define "helm.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "helm.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+
+===== ./cluster/helm/values.yaml =====
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+image:
+  repository: "ghcr.io/tenariaz"
+  tag: "v1.0.22-a7aa85e"
+  arch: amd64
+  os: linux
+  imagePullSecrets: ghcr
+secret:
+  tokenKey: "token"
+  tokenName: "TELE_TOKEN"
+  name: "kbot"
+service:
+  port: 8080
+podSecurityContext:
+  privileged: true
+
+
+===== ./cluster/main.go =====
+/*
+Copyright © 2025 NAME HERE <EMAIL ADDRESS>
+*/
+
+package main
+
+import "github.com/tenariaz/kbot/cmd"
+
+func main() {
+	cmd.Execute()
+}
+
+
+===== ./cluster/Makefile =====
+# Application name and registry configuration
+APP := $(shell basename $(shell git remote get-url origin))
+REGISTRY := ghcr.io/tenariaz
+VERSION := $(shell git describe --tags --abbrev=0)-$(shell git rev-parse --short HEAD)
+
+# Build configuration
+TARGETOS ?= linux
+TARGETARCH ?= amd64
+CGO_ENABLED ?= 0
+
+# Validate environment variables
+ifeq ($(TARGETOS),)
+$(error TARGETOS is not set)
+endif
+ifeq ($(TARGETARCH),)
+$(error TARGETARCH is not set)
+endif
+
+# Phony targets
+.PHONY: help format lint test get build image push clean dev release
+
+# Help target
+help:
+	@echo "Available targets:"
+	@echo "  help     - Show this help message"
+	@echo "  format   - Format Go code"
+	@echo "  lint     - Run golangci-lint"
+	@echo "  test     - Run tests"
+	@echo "  get      - Get dependencies"
+	@echo "  build    - Build the application"
+	@echo "  image    - Build Docker image"
+	@echo "  push     - Push Docker image to registry"
+	@echo "  clean    - Clean build artifacts"
+	@echo "  dev      - Development build (with debug info)"
+	@echo "  release  - Production build (optimized)"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  TARGETOS   - Target OS (linux, darwin, windows) [$(TARGETOS)]"
+	@echo "  TARGETARCH - Target architecture (amd64, arm64) [$(TARGETARCH)]"
+	@echo "  CGO_ENABLED - Enable CGO (0 or 1) [$(CGO_ENABLED)]"
+
+# Format Go code
+format:
+	@echo "Formatting Go code..."
+	@gofmt -s -w ./
+
+# Install golangci-lint if not present
+.PHONY: install-lint
+install-lint:
+	@which golangci-lint >/dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+
+# Run linter
+lint: install-lint
+	@echo "Running linter..."
+	@golangci-lint run ./...
+
+# Run tests
+test:
+	@echo "Running tests..."
+	@go test -v ./...
+
+# Get dependencies
+get:
+	@echo "Getting dependencies..."
+	@go mod tidy
+	@go mod download
+
+# Development build
+dev: format get
+	@echo "Building development version..."
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) \
+		go build -v -o kbot -ldflags "-X=github.com/tenariaz/kbot/cmd.appVersion=$(VERSION)-dev"
+
+# Production build
+build: format get
+	@echo "Building production version..."
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGETOS) GOARCH=$(TARGETARCH) \
+		go build -v -o kbot -ldflags "-X=github.com/tenariaz/kbot/cmd.appVersion=$(VERSION) -w -s"
+
+# Build Docker image
+image:
+	@echo "Building Docker image..."
+	@docker build . -t $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) \
+		--build-arg TARGETOS=$(TARGETOS) \
+		--build-arg TARGETARCH=$(TARGETARCH) \
+		--build-arg VERSION=$(VERSION)
+
+# Push Docker image
+push:
+	@echo "Pushing Docker image..."
+	@docker push $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH)
+
+# Clean build artifacts
+clean:
+	@rm -rf kbot
+	@docker rmi $(REGISTRY)/$(APP):$(VERSION)-$(TARGETOS)-$(TARGETARCH) || true
+
+# Release target
+release: clean test build image push
+	@echo "Release $(VERSION) completed successfully!"
+
+
