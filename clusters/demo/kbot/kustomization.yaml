@@ -10,7 +10,7 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: kbot       # 👈 має збігатися з назвою `GitRepository`!
+    name: kbot
     namespace: flux-system
   targetNamespace: demo
   timeout: 2m
